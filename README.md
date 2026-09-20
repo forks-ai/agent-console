@@ -286,7 +286,7 @@ Dashboard:
 | Key | Action |
 | --- | --- |
 | `↑` / `↓`, `j` / `k` | Select a session |
-| `Space` | Fold or expand the selected workspace |
+| `Space` | Fold or expand the selected workspace or Archived group |
 | `gg` / `G` | Select the first / last row in the list |
 | `Enter` | Open the selected agent |
 | `s` | Open a shell |
@@ -317,7 +317,7 @@ With the Sessions list focused:
 | Key | Action |
 | --- | --- |
 | `↑` / `↓`, `j` / `k` | Select a session |
-| `Space` | Fold or expand the selected workspace |
+| `Space` | Fold or expand the selected workspace or Archived group |
 | `gg` / `G` | Select the first / last row in the list |
 | `Enter`, `Ctrl-\` | Open/resume and focus its agent |
 | `/` | Search sessions as you type |
@@ -333,11 +333,12 @@ With the Sessions list focused:
 | `y` | Copy the latest shell command output |
 | `1` … `9` | Focus a numbered shell |
 
-A folded workspace takes one selectable row. Movement and `gg`/`G` skip its
-hidden sessions. `Space` or `Enter` expands it. Folding lasts until the console
+Workspace groups and Archived can each fold into one selectable row. Movement
+and `gg`/`G` skip hidden sessions. `Space` or `Enter` expands the selected group.
+Select any archived session and press `Space` to fold Archived. Its fold state
+is separate from the active workspace groups. Folding lasts until the console
 closes and is shared by both terminal lists. These keys remain normal input in
-Agent and Shell panes and in text dialogs. Archived sessions stay in their own
-group.
+Agent and Shell panes and in text dialogs.
 
 After `h` or `m`, use `Ctrl-\` until focus returns to Sessions; the normal split
 layout is restored automatically.

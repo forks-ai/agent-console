@@ -562,7 +562,7 @@ fn handle_dashboard_event(
                     .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER)
                 {
                     match key.code {
-                        KeyCode::Char(' ') => app.toggle_selected_workspace(),
+                        KeyCode::Char(' ') => app.toggle_selected_group(),
                         KeyCode::Char('G') => app.select_list_edge(true),
                         KeyCode::Char('g') if pending_g => app.select_list_edge(false),
                         KeyCode::Char('g') => app.list_g_pending = true,
@@ -585,7 +585,7 @@ fn handle_dashboard_action(
         "quit" => return DashboardOutcome::Quit,
         "next" => app.select_next(),
         "previous" => app.select_previous(),
-        "enter" if app.selected_workspace_collapsed() => app.toggle_selected_workspace(),
+        "enter" if app.selected_group_collapsed() => app.toggle_selected_group(),
         "enter" => return attach_agent(app, current_exe),
         "takeover" => return force_attach_agent(app, current_exe),
         "shell" => return attach_shell(app, current_exe),
@@ -1083,7 +1083,7 @@ fn draw_sessions(frame: &mut Frame, area: Rect, app: &App) {
     for index in app.session_list_order() {
         let session = &app.sessions[index];
         let archived = app.session_archived(session);
-        let collapsed = app.workspace_collapsed(session);
+        let collapsed = app.group_collapsed(session);
         let selected = index == app.selected;
         let base = if selected {
             Style::default().bg(Color::Rgb(45, 53, 72))
@@ -1092,8 +1092,8 @@ fn draw_sessions(frame: &mut Frame, area: Rect, app: &App) {
         };
         if archived && !archived_group {
             lines.push(Line::from(Span::styled(
-                "▾ Archived",
-                Style::default()
+                format!("{} Archived", if collapsed { "▸" } else { "▾" }),
+                (if collapsed { base } else { Style::default() })
                     .fg(Color::DarkGray)
                     .add_modifier(Modifier::BOLD),
             )));
@@ -1255,7 +1255,7 @@ fn draw_session_overview(frame: &mut Frame, area: Rect, app: &App) {
     let order = app
         .session_display_order()
         .into_iter()
-        .filter(|&index| !app.workspace_collapsed(&app.sessions[index]))
+        .filter(|&index| !app.group_collapsed(&app.sessions[index]))
         .collect::<Vec<_>>();
     let selected = order
         .iter()
@@ -1273,12 +1273,12 @@ fn draw_session_overview(frame: &mut Frame, area: Rect, app: &App) {
         .padding(Padding::uniform(1));
     let inner = outer.inner(area);
     frame.render_widget(outer, area);
-    if app.selected_workspace_collapsed() {
+    if app.selected_group_collapsed() {
         frame.render_widget(
-            Paragraph::new(format!(
-                "Workspace · {}\nSpace or Enter expands this workspace",
-                app.sessions[app.selected].cwd.display()
-            )),
+            Paragraph::new(
+                app.collapsed_group_preview(&app.sessions[app.selected])
+                    .join("\n"),
+            ),
             inner,
         );
         return;
@@ -2472,6 +2472,47 @@ mod tests {
         assert_eq!(app.text_dialog.as_ref().unwrap().value, "ggG ");
         press(&mut app, KeyCode::Esc);
         assert_eq!(app.selected, 2);
+
+        app.toggle_selected_archive().unwrap();
+        app.selected = 1;
+        app.toggle_selected_archive().unwrap();
+        press(&mut app, KeyCode::Char('G'));
+        press(&mut app, KeyCode::Char(' '));
+        assert_eq!(app.session_list_order(), [0, 1]);
+        assert_eq!(app.selected, 1);
+        terminal
+            .draw(|frame| draw_sessions(frame, frame.area(), &app))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let rendered = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(rendered.contains("▸ Archived"));
+        assert_eq!(rendered.matches("Cdx").count(), 1);
+        let folded = buffer
+            .content()
+            .iter()
+            .find(|cell| cell.symbol() == "▸")
+            .unwrap();
+        assert_eq!(folded.fg, Color::DarkGray);
+        assert_eq!(folded.bg, Color::Rgb(45, 53, 72));
+        terminal
+            .draw(|frame| draw_session_overview(frame, frame.area(), &app))
+            .unwrap();
+        let rendered = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(rendered.contains("Archived sessions"));
+        assert!(rendered.contains("Space or Enter expands this group"));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.session_list_order(), [0, 1, 2]);
+        assert!(app.selected_session().is_some());
     }
 
     #[test]

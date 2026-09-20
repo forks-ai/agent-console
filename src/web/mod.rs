@@ -338,6 +338,76 @@ mod tests {
         state_with(AuthMode::Token("secret".into()))
     }
 
+    #[tokio::test]
+    async fn web_archive_ignores_terminal_folding_and_search() {
+        let state = test_state();
+        {
+            let mut app = state.app.lock().unwrap();
+            let mut other = app.sessions[0].clone();
+            other.key = "codex:other".into();
+            other.cwd = "/tmp/other".into();
+            app.sessions.push(other);
+            app.toggle_selected_archive().unwrap();
+            app.toggle_selected_group();
+            app.selected = 1;
+        }
+        for archived in [false, true, false] {
+            let response = respond(
+                state.clone(),
+                Method::POST,
+                "/api/sessions/codex:test/archive?token=secret",
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = axum::body::to_bytes(response.into_body(), 65536)
+                .await
+                .unwrap();
+            let session: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(session["archived"], archived);
+            let mut app = state.app.lock().unwrap();
+            assert_eq!(
+                app.selected, 1,
+                "web actions preserve the terminal selection"
+            );
+            assert_eq!(app.session_archived(&app.sessions[0]), archived);
+            assert!(app.group_collapsed(&app.sessions[0]) || !archived);
+            if !archived {
+                app.selected = 0;
+                if !app.group_collapsed(&app.sessions[0]) {
+                    app.toggle_selected_group();
+                }
+                app.selected = 1;
+            }
+        }
+        {
+            let mut app = state.app.lock().unwrap();
+            app.open_search_dialog();
+            app.text_dialog.as_mut().unwrap().value = "other".into();
+            app.commit_text_dialog().unwrap();
+        }
+        assert_eq!(
+            respond(
+                state.clone(),
+                Method::POST,
+                "/api/sessions/codex:test/archive?token=secret"
+            )
+            .await
+            .status(),
+            StatusCode::OK,
+        );
+        assert_eq!(state.app.lock().unwrap().selected, 1);
+        assert_eq!(
+            respond(
+                state,
+                Method::POST,
+                "/api/sessions/codex:missing/archive?token=secret"
+            )
+            .await
+            .status(),
+            StatusCode::NOT_FOUND,
+        );
+    }
+
     async fn respond(state: AppState, method: Method, uri: &str) -> axum::response::Response {
         build_router(state)
             .oneshot(

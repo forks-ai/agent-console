@@ -114,11 +114,30 @@ send -- "j"
 expect_text {SESSION PREVIEW .*Alpha older} select-session-to-archive
 send -- "x"
 expect_text {SESSION PREVIEW .*Alpha older} archive-session
+send -- " "
+expect_text {SESSION PREVIEW .*▸ Archived} fold-archived-group
+send -- "gg"
+expect_text {SESSION PREVIEW .*Alpha newest} move-above-folded-archives
+send -- "G"
+expect_text {SESSION PREVIEW .*▸ Archived} jump-to-folded-archives
+send -- "x"
+expect_text {SESSION PREVIEW .*▸ Archived} folded-archives-ignore-restore
+send -- "1bmy"
+send -- "?"
+expect_text {WORKSPACE KEY BINDINGS} folded-archives-keep-session-focus
+send -- "\033"
+expect_text {FOCUS SESSIONS} close-archived-help
+send -- "\r"
+expect_text {SESSION PREVIEW .*Alpha older} enter-expands-archives
+send -- " "
+expect_text {SESSION PREVIEW .*▸ Archived} fold-archives-again
 send -- "gg"
 expect_text {SESSION PREVIEW .*Alpha newest} select-workspace-to-fold
 send -- " "
 expect_text {SESSION PREVIEW .*▸ alpha} fold-workspace-with-archived-session
 send -- "G"
+expect_text {SESSION PREVIEW .*▸ Archived} jump-to-archived-group
+send -- " "
 expect_text {SESSION PREVIEW .*Alpha older} jump-to-archived-session
 send -- "x"
 expect_text {SESSION PREVIEW .*▸ alpha} restore-into-folded-workspace

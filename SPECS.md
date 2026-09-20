@@ -416,7 +416,8 @@ Entering a workspace:
    step/first blocker, any stale-summary reason, and the recent transcript. The
    summary lives here rather than in the title, so periodic resummarizing changes
    what the session is doing now without changing what it is. The selected item owns the focus highlight;
-   workspace group headings and the `SESSIONS` heading are never selectable.
+   expanded group headings and the `SESSIONS` heading are labels, while folded
+   groups remain selectable.
    Enter explicitly starts/resumes and focuses its agent.
 7. `Ctrl-\` cycles Agent -> Shell -> Sessions -> Agent, creating the first
    shell when needed. `Ctrl-Q` returns to the Dashboard. `Ctrl-^` adds a Shell
@@ -430,10 +431,10 @@ Entering a workspace:
    focus, allowing nested providers to distinguish `Ctrl-Enter` from Enter
    without changing interactive Shell input.
 8. Session-list focus is navigation, not a separate command mode. Up/Down or
-   `j`/`k` selects sessions or folded workspaces. Space folds or expands the
-   selected workspace; `gg`/`G` selects the first/last list row. A folded
-   workspace takes one selectable row and its hidden sessions are skipped.
-   Enter expands a folded workspace or activates the selected Agent; `/` searches
+   `j`/`k` selects sessions or folded groups. Space folds or expands the
+   selected workspace or Archived group; `gg`/`G` selects the first/last list row.
+   A folded group takes one selectable row and its hidden sessions are skipped.
+   Enter expands a folded group or activates the selected Agent; `/` searches
    sessions live; `a` jumps to the next unread alert; `?` opens the effective
    Workspace key-binding panel; `n` opens a new-session dialog using the
    selected workspace; `s` creates a Shell;
@@ -618,7 +619,7 @@ shows the error on screen.
 
 ```text
 Up/Down or j/k   Select a session
-Space            Fold / expand the selected workspace
+Space            Fold / expand the selected workspace or Archived group
 gg / G           Select the first / last list row
 Enter            Open workspace focused on the selected agent
 s                Add shell and open workspace focused on it
@@ -634,7 +635,7 @@ Ctrl-\ / Ctrl-Q  Focus cycle / Dashboard (all Workspace modes)
 Ctrl-^            Add and focus a Shell (Agent or Shell focus)
 Ctrl-N/X         Next / close Shell (Shell focus only; forwarded in Agent)
 j/k or Up/Down   Select session (FOCUS SESSIONS only)
-Space            Fold / expand workspace (FOCUS SESSIONS only)
+Space            Fold / expand group (FOCUS SESSIONS only)
 gg / G           First / last list row (FOCUS SESSIONS only)
 /                 Search sessions (FOCUS SESSIONS only)
 e                Rename session (FOCUS SESSIONS only)
@@ -655,12 +656,16 @@ enable/disable, and separate provider/status/workspace cycling filters are not
 part of the interaction model. Live search covers those metadata dimensions.
 
 Folding is shared by the Dashboard and Workspace session lists for the life of
-the console. Expanded workspace headings remain labels; a folded workspace is
-one navigation target. Workspace headings stay bold cyan when folded; selected
-folded rows use a dark background to keep the cyan text readable.
+the console. Expanded group headings remain labels; a folded workspace or
+Archived group is one navigation target. Workspace headings stay bold cyan
+when folded; selected folded rows use a dark background to keep the cyan text
+readable.
 Space or Enter expands it. Session actions such as
 rename or archive require an expanded session. Archived sessions stay in the
-separate Archived group. List jumps follow the current search and fold state;
+separate Archived group, which folds independently of the active workspaces.
+Selecting any archived session and pressing Space folds the whole Archived
+group. Search and refresh preserve its fold state; an alert expands the group
+containing its session. List jumps follow the current search and fold state;
 empty lists ignore them. `gg` accepts consecutive presses or one input batch;
 another key cancels a pending `g`. Agent, Shell, and dialog input is unchanged.
 
@@ -705,9 +710,13 @@ independent agent or shell viewport under the pointer using either SGR or
 legacy X10 mouse input.
 Aliases and archive state are persistent user metadata. Archive moves a
 session into one dimmed `Archived` group after all active workspace groups.
-Visible archived sessions remain selectable and `x` restores them to their
-workspace group. Search includes old archived sessions hidden by the configured
-age cutoff. The alias always takes display precedence over generated summary text.
+Visible archived sessions remain selectable while their group is expanded,
+and `x` restores them to their workspace group. Search includes old archived
+sessions hidden by the configured age cutoff. The alias always takes display
+precedence over generated summary text.
+Browser archive and restore actions address sessions by key, independently of
+terminal folding and search. They preserve the terminal's current selection
+unless it must move to a visible row.
 
 `agent-console prune-archived [--days N] [--dry-run]` explicitly deletes archived
 sessions older than N days (default 7, independent of the display cutoff) on
@@ -849,8 +858,8 @@ Automated tests must cover:
     policy, route wiring behind the credential and App-lock checks, transcript
     paging with cursor recovery, and blocking-dialog parsing with the two-step
     cursor answer.
-14. Workspace folding, navigation through folded rows, and split/batched `gg`
-    and `G`, including child input and modified keys. Run
+14. Workspace and Archived folding, navigation through folded rows, and
+    split/batched `gg` and `G`, including child input and modified keys. Run
     `cargo build --locked` and `expect tests/e2e/session_list_controls.exp` for
     the terminal regression.
 

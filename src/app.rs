@@ -195,6 +195,12 @@ impl DiscoveryWorker {
     }
 }
 
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+enum SessionListGroup {
+    Workspace(PathBuf),
+    Archived,
+}
+
 pub struct RuntimeState {
     pub sessions: Vec<Session>,
     pub selected: usize,
@@ -223,7 +229,7 @@ pub struct RuntimeState {
     /// the suppression would only lose alerts nobody ever saw.
     suppress_selected_notifications: bool,
     filter: SessionFilter,
-    collapsed_workspaces: HashSet<PathBuf>,
+    collapsed_groups: HashSet<SessionListGroup>,
     hide_archived_after_days: u64,
     store: StateStore,
     event_index: events::EventIndex,
@@ -405,7 +411,7 @@ impl App {
                 notifications: VecDeque::new(),
                 suppress_selected_notifications: true,
                 filter: SessionFilter::default(),
-                collapsed_workspaces: HashSet::new(),
+                collapsed_groups: HashSet::new(),
                 hide_archived_after_days: config.hide_archived_after_days(),
                 store,
                 event_index,
@@ -432,7 +438,7 @@ impl App {
             .contains(&self.selected)
             .then(|| self.sessions.get(self.selected))
             .flatten()
-            .filter(|session| !self.workspace_collapsed(session))
+            .filter(|session| !self.group_collapsed(session))
     }
 
     pub fn select_next(&mut self) {
@@ -473,27 +479,23 @@ impl App {
         }
     }
 
-    pub fn toggle_selected_workspace(&mut self) {
+    pub fn toggle_selected_group(&mut self) {
         if !self.session_display_order().contains(&self.selected) {
             return;
         }
-        let session = &self.sessions[self.selected];
-        if self.session_archived(session) {
-            return;
-        }
-        let cwd = session.cwd.clone();
-        if !self.runtime.collapsed_workspaces.remove(&cwd) {
-            self.runtime.collapsed_workspaces.insert(cwd);
+        let group = self.session_group(&self.sessions[self.selected]);
+        if !self.runtime.collapsed_groups.remove(&group) {
+            self.runtime.collapsed_groups.insert(group);
         }
         self.normalize_selection();
     }
 
-    pub fn selected_workspace_collapsed(&self) -> bool {
+    pub fn selected_group_collapsed(&self) -> bool {
         self.session_list_order().contains(&self.selected)
             && self
                 .sessions
                 .get(self.selected)
-                .is_some_and(|session| self.workspace_collapsed(session))
+                .is_some_and(|session| self.group_collapsed(session))
     }
 
     pub fn status_counts(&self) -> (usize, usize, usize, usize) {
@@ -676,7 +678,15 @@ impl App {
             .selected_session()
             .map(|session| session.key.clone())
             .ok_or_else(|| "no selected session".to_owned())?;
-        let archived = self.runtime.store.toggle_archived(&key);
+        self.toggle_session_archive(&key)
+    }
+
+    /// Keyed browser actions are independent of terminal folding and search.
+    pub fn toggle_session_archive(&mut self, key: &str) -> Result<bool, String> {
+        if !self.sessions.iter().any(|session| session.key == key) {
+            return Err(format!("no session with key {key}"));
+        }
+        let archived = self.runtime.store.toggle_archived(key);
         self.runtime
             .store
             .save_incremental()
@@ -758,7 +768,9 @@ impl App {
             .and_then(|value| value.to_str())
             .unwrap_or("session")
             .to_owned();
-        self.runtime.collapsed_workspaces.remove(&cwd);
+        self.runtime
+            .collapsed_groups
+            .remove(&SessionListGroup::Workspace(cwd.clone()));
         self.sessions.insert(
             0,
             Session {
@@ -872,8 +884,8 @@ impl App {
                     | WorkspaceExit::ToggleArchive
             )
         {
-            if exit == WorkspaceExit::ActivateSession && self.selected_workspace_collapsed() {
-                self.toggle_selected_workspace();
+            if exit == WorkspaceExit::ActivateSession && self.selected_group_collapsed() {
+                self.toggle_selected_group();
                 drive.session = self.prepare_selected_view(current_exe)?;
             }
             drive.focus = WorkspaceFocus::Sessions;
@@ -951,11 +963,11 @@ impl App {
                 }
                 drive.focus = WorkspaceFocus::Sessions;
             }
-            WorkspaceExit::ToggleWorkspace
+            WorkspaceExit::ToggleSessionGroup
             | WorkspaceExit::FirstSession
             | WorkspaceExit::LastSession => {
                 match exit {
-                    WorkspaceExit::ToggleWorkspace => self.toggle_selected_workspace(),
+                    WorkspaceExit::ToggleSessionGroup => self.toggle_selected_group(),
                     WorkspaceExit::FirstSession => self.select_list_edge(false),
                     WorkspaceExit::LastSession => self.select_list_edge(true),
                     _ => unreachable!(),
@@ -1329,11 +1341,11 @@ impl RuntimeState {
         mut discovered: Vec<Session>,
         alive: &HashSet<String>,
     ) -> Vec<(String, String)> {
-        let selected_workspace = self
+        let selected_group = self
             .sessions
             .get(self.selected)
-            .filter(|session| self.workspace_collapsed(session))
-            .map(|session| session.cwd.clone());
+            .filter(|session| self.group_collapsed(session))
+            .map(|session| self.session_group(session));
         let mut selected_key = self
             .sessions
             .get(self.selected)
@@ -1444,11 +1456,9 @@ impl RuntimeState {
             .as_ref()
             .and_then(|key| self.sessions.iter().position(|session| &session.key == key))
             .or_else(|| {
-                selected_workspace.and_then(|cwd| {
+                selected_group.and_then(|group| {
                     self.sessions.iter().position(|session| {
-                        session.cwd == cwd
-                            && self.session_is_visible(session)
-                            && !self.store.archived(&session.key)
+                        self.session_group(session) == group && self.session_is_visible(session)
                     })
                 })
             })
@@ -1497,8 +1507,26 @@ impl RuntimeState {
         order
     }
 
-    pub fn workspace_collapsed(&self, session: &Session) -> bool {
-        !self.store.archived(&session.key) && self.collapsed_workspaces.contains(&session.cwd)
+    fn session_group(&self, session: &Session) -> SessionListGroup {
+        if self.store.archived(&session.key) {
+            SessionListGroup::Archived
+        } else {
+            SessionListGroup::Workspace(session.cwd.clone())
+        }
+    }
+
+    pub fn group_collapsed(&self, session: &Session) -> bool {
+        self.collapsed_groups.contains(&self.session_group(session))
+    }
+
+    pub fn collapsed_group_preview(&self, session: &Session) -> Vec<String> {
+        vec![
+            match self.session_group(session) {
+                SessionListGroup::Workspace(cwd) => format!("Workspace · {}", cwd.display()),
+                SessionListGroup::Archived => "Archived sessions".into(),
+            },
+            "Space or Enter expands this group".into(),
+        ]
     }
 
     pub fn session_list_order(&self) -> Vec<usize> {
@@ -1507,7 +1535,7 @@ impl RuntimeState {
             .into_iter()
             .filter(|&index| {
                 let session = &self.sessions[index];
-                !self.workspace_collapsed(session) || folded.insert(&session.cwd)
+                !self.group_collapsed(session) || folded.insert(self.session_group(session))
             })
             .collect()
     }
@@ -1515,13 +1543,13 @@ impl RuntimeState {
     fn normalize_selection(&mut self) {
         let order = self.session_list_order();
         if !order.contains(&self.selected) {
-            let same_workspace = self.sessions.get(self.selected).and_then(|selected| {
+            let same_group = self.sessions.get(self.selected).and_then(|selected| {
                 order.iter().find(|&&index| {
-                    self.workspace_collapsed(&self.sessions[index])
-                        && self.sessions[index].cwd == selected.cwd
+                    self.group_collapsed(&self.sessions[index])
+                        && self.session_group(&self.sessions[index]) == self.session_group(selected)
                 })
             });
-            if let Some(&index) = same_workspace.or_else(|| order.first()) {
+            if let Some(&index) = same_group.or_else(|| order.first()) {
                 self.selected = index;
             }
         }
@@ -1632,9 +1660,12 @@ impl RuntimeState {
         for index in order {
             let session = &self.sessions[index];
             let archived = self.store.archived(&session.key);
-            let collapsed = self.workspace_collapsed(session);
+            let collapsed = self.group_collapsed(session);
             if archived && !archived_group {
-                lines.push("▾ Archived".into());
+                if collapsed && index == self.selected {
+                    selected_row = lines.len();
+                }
+                lines.push(format!("{} Archived", if collapsed { "▸" } else { "▾" }));
                 archived_group = true;
                 last_workspace = None;
             } else if !archived && last_workspace != Some(&session.cwd) {
@@ -1665,11 +1696,8 @@ impl RuntimeState {
         }
         let preview = selected_session
             .map(|session| {
-                if self.workspace_collapsed(session) {
-                    return vec![
-                        format!("Workspace · {}", session.cwd.display()),
-                        "Space or Enter expands this workspace".into(),
-                    ];
+                if self.group_collapsed(session) {
+                    return self.collapsed_group_preview(session);
                 }
                 let mut preview = vec![
                     format!(
@@ -1707,7 +1735,7 @@ impl RuntimeState {
             selected: selected_row,
             selected_session_key: selected_session.map(|session| session.key.clone()),
             selected_session_title: selected_session
-                .filter(|session| !self.workspace_collapsed(session))
+                .filter(|session| !self.group_collapsed(session))
                 .map(|session| self.session_title(session)),
             search_query: self.filter.query.clone(),
             status_counts: session_status_counts(&self.sessions),
@@ -1737,7 +1765,7 @@ impl RuntimeState {
             .suppress_selected_notifications
             .then(|| self.sessions.get(self.selected))
             .flatten()
-            .filter(|session| !self.workspace_collapsed(session))
+            .filter(|session| !self.group_collapsed(session))
             .map(|session| session.key.clone());
         let current = self
             .sessions
@@ -1863,10 +1891,11 @@ impl RuntimeState {
             notification.read = true;
             return false;
         };
-        self.selected = index;
-        self.collapsed_workspaces.remove(&self.sessions[index].cwd);
-        self.filter = SessionFilter::default();
         notification.read = true;
+        self.selected = index;
+        self.collapsed_groups
+            .remove(&self.session_group(&self.sessions[index]));
+        self.filter = SessionFilter::default();
         true
     }
 
@@ -2257,7 +2286,7 @@ impl App {
                 notifications: VecDeque::new(),
                 suppress_selected_notifications: true,
                 filter: SessionFilter::default(),
-                collapsed_workspaces: HashSet::new(),
+                collapsed_groups: HashSet::new(),
                 hide_archived_after_days: AgentConsoleConfig::default().hide_archived_after_days(),
                 store,
                 event_index,
@@ -2406,7 +2435,7 @@ mod tests {
                 notifications: VecDeque::new(),
                 suppress_selected_notifications: true,
                 filter: SessionFilter::default(),
-                collapsed_workspaces: HashSet::new(),
+                collapsed_groups: HashSet::new(),
                 hide_archived_after_days: AgentConsoleConfig::default().hide_archived_after_days(),
                 store,
                 event_index,
@@ -2808,7 +2837,7 @@ mod tests {
         sibling.provider_session_id = "sibling".into();
         app.sessions.extend([other, sibling]);
         app.selected = 2;
-        app.toggle_selected_workspace();
+        app.toggle_selected_group();
         assert_eq!(app.session_list_order(), [0, 1]);
         assert_eq!(app.selected, 0);
         assert!(app.selected_session().is_none());
@@ -2824,7 +2853,7 @@ mod tests {
         assert_eq!(app.selected, 0);
         app.select_previous();
         assert_eq!(app.selected, 1, "movement wraps around visible rows");
-        app.toggle_selected_workspace();
+        app.toggle_selected_group();
         app.select_list_edge(false);
         assert_eq!(app.selected, 0);
         app.select_list_edge(true);
@@ -2833,14 +2862,14 @@ mod tests {
             app.runtime.workspace_chrome().sessions,
             ["▸ alpha", "▸ beta"]
         );
-        app.toggle_selected_workspace();
+        app.toggle_selected_group();
 
         app.select_list_edge(false);
         let original = app.runtime.workspace_chrome().selected_session_key;
         app.runtime
             .apply_workspace_search(WorkspaceSearchUpdate::Preview("sibling".into()));
         assert_eq!(app.session_list_order(), [2]);
-        assert!(app.selected_workspace_collapsed());
+        assert!(app.selected_group_collapsed());
         app.runtime
             .apply_workspace_search(WorkspaceSearchUpdate::Cancel {
                 query: String::new(),
@@ -2856,20 +2885,124 @@ mod tests {
         discovered[0].transcript_modified_at = unix_timestamp() + 10;
         app.runtime.apply_discovered(discovered, &HashSet::new());
         assert_eq!(app.sessions[app.selected].cwd, Path::new("/tmp/alpha"));
-        assert!(app.selected_workspace_collapsed());
-        app.toggle_selected_workspace();
+        assert!(app.selected_group_collapsed());
+        app.toggle_selected_group();
         assert_eq!(app.selected_session().unwrap().key, "codex:sibling");
 
         app.runtime.filter.query = "no matching session".into();
         app.select_list_edge(false);
         app.select_list_edge(true);
-        app.toggle_selected_workspace();
+        app.toggle_selected_group();
         assert!(app.session_list_order().is_empty());
         app.sessions.clear();
         app.select_next();
         app.select_previous();
         app.select_list_edge(true);
-        app.toggle_selected_workspace();
+        app.toggle_selected_group();
+    }
+
+    #[test]
+    fn archived_group_folds_across_workspaces_and_survives_search_and_refresh() {
+        let mut app = App::test_fixture();
+        app.sessions[0].cwd = "/tmp/alpha".into();
+        let mut first = app.sessions[0].clone();
+        first.key = "codex:archived-first".into();
+        let mut last = first.clone();
+        last.key = "codex:archived-last".into();
+        last.cwd = "/tmp/beta".into();
+        app.sessions.extend([first, last]);
+        app.runtime.store.toggle_archived("codex:archived-first");
+        app.runtime.store.toggle_archived("codex:archived-last");
+        app.selected = 2;
+
+        app.toggle_selected_group();
+        assert_eq!(app.session_list_order(), [0, 1]);
+        assert_eq!(app.selected, 1);
+        assert!(app.selected_session().is_none());
+        assert!(app.toggle_selected_archive().is_err());
+        let chrome = app.runtime.workspace_chrome();
+        assert_eq!(chrome.sessions[chrome.selected], "▸ Archived");
+        assert!(chrome.selected_session_title.is_none());
+        assert_eq!(chrome.preview[0], "Archived sessions");
+
+        app.select_next();
+        assert_eq!(app.selected, 0);
+        app.toggle_selected_group();
+        assert_eq!(
+            app.runtime.workspace_chrome().sessions,
+            ["▸ alpha", "▸ Archived"]
+        );
+        app.select_list_edge(true);
+        assert_eq!(app.selected, 1);
+
+        app.toggle_selected_group();
+        app.toggle_selected_archive().unwrap();
+        assert_eq!(app.selected, 0, "restore selects the folded workspace");
+        assert!(app.selected_session().is_none());
+        app.selected = 2;
+        app.toggle_selected_group();
+        app.selected = 0;
+        app.toggle_selected_group();
+        app.selected = 1;
+        app.toggle_selected_archive().unwrap();
+        assert!(
+            app.selected_group_collapsed(),
+            "archive selects the folded Archived group"
+        );
+        app.selected = 0;
+        app.toggle_selected_group();
+        app.select_list_edge(true);
+
+        let original = app.runtime.workspace_chrome().selected_session_key;
+        app.runtime
+            .apply_workspace_search(WorkspaceSearchUpdate::Preview("beta".into()));
+        assert_eq!(app.session_list_order(), [2]);
+        assert_eq!(app.selected, 2);
+        assert_eq!(app.runtime.workspace_chrome().sessions, ["▸ Archived"]);
+        app.runtime
+            .apply_workspace_search(WorkspaceSearchUpdate::Cancel {
+                query: String::new(),
+                selected_session_key: original,
+            });
+        assert_eq!(app.selected, 1);
+
+        for session in &mut app.sessions {
+            session.transcript_path = Some("/tmp/fixture.jsonl".into());
+        }
+        let mut discovered = app.sessions.clone();
+        discovered.remove(1);
+        app.runtime.apply_discovered(discovered, &HashSet::new());
+        assert_eq!(app.sessions[app.selected].key, "codex:archived-last");
+        assert!(app.selected_group_collapsed());
+
+        app.toggle_selected_group();
+        assert_eq!(app.selected_session().unwrap().key, "codex:archived-last");
+        assert!(app.group_collapsed(&app.sessions[0]));
+        app.toggle_selected_archive().unwrap();
+        assert!(!app.session_archived(app.selected_session().unwrap()));
+        assert!(
+            !app.runtime
+                .workspace_chrome()
+                .sessions
+                .iter()
+                .any(|line| line.contains("Archived"))
+        );
+    }
+
+    #[test]
+    fn alerts_expand_the_archived_group_without_restoring_the_session() {
+        let mut app = App::test_fixture();
+        app.toggle_selected_archive().unwrap();
+        app.toggle_selected_group();
+        app.runtime.capture_notifications();
+        app.sessions[0].status = SessionStatus::Waiting;
+        app.runtime.capture_notifications();
+
+        assert!(app.selected_session().is_none());
+        assert!(app.runtime.jump_to_next_notification());
+        assert!(app.selected_session().is_some());
+        assert!(app.session_archived(&app.sessions[0]));
+        assert_eq!(app.unread_notification_count(), 0);
     }
 
     #[test]

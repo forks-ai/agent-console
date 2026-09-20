@@ -274,7 +274,7 @@ impl AgentConsoleConfig {
             }
         }
         lines.push(format!("{:<22} {}", "sidebar selection", "Mouse wheel"));
-        lines.push(format!("{:<22} {}", "fold / expand workspace", "Space"));
+        lines.push(format!("{:<22} {}", "fold / expand group", "Space"));
         lines.push(format!("{:<22} {}", "first / last list row", "gg / G"));
         for (heading, actions) in [
             (
@@ -320,7 +320,7 @@ impl AgentConsoleConfig {
             if heading.contains("SESSION LIST") {
                 lines.extend([
                     format!("{:<22} {}", "select session", "↑/↓, J/K"),
-                    format!("{:<22} {}", "fold / expand workspace", "Space"),
+                    format!("{:<22} {}", "fold / expand group", "Space"),
                     format!("{:<22} {}", "first / last list row", "gg / G"),
                     format!("{:<22} {}", "open agent", "Enter"),
                     format!("{:<22} {}", "new session", "N"),

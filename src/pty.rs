@@ -2644,7 +2644,7 @@ pub enum WorkspaceExit {
     NewSession,
     OpenShell,
     ToggleArchive,
-    ToggleWorkspace,
+    ToggleSessionGroup,
     FirstSession,
     LastSession,
     RefreshSessions,
@@ -3555,7 +3555,7 @@ struct PendingAlternateCopy {
 pub struct WorkspaceChrome {
     pub sessions: Vec<String>,
     pub selected: usize,
-    /// Also anchors a folded workspace's selection when cancelling search.
+    /// Also anchors a folded group's selection when cancelling search.
     pub selected_session_key: Option<String>,
     /// The selected session's title as the list draws it, which is what the rename prompt
     /// opens on. The rendered `sessions` lines carry status glyphs and an agent column, so
@@ -3889,7 +3889,7 @@ enum WorkspaceCommand {
     Help,
     PreviousSession,
     NextSession,
-    ToggleWorkspace,
+    ToggleSessionGroup,
     FirstSession,
     LastSession,
     SelectShell(usize),
@@ -3959,7 +3959,7 @@ impl WorkspaceBindings {
             }
         }
         commands.extend([
-            (b" ".to_vec(), WorkspaceCommand::ToggleWorkspace),
+            (b" ".to_vec(), WorkspaceCommand::ToggleSessionGroup),
             (b"gg".to_vec(), WorkspaceCommand::FirstSession),
             (b"G".to_vec(), WorkspaceCommand::LastSession),
         ]);
@@ -4373,7 +4373,7 @@ fn workspace_command_active(
             focus == WorkspaceFocus::Shell
         }
         WorkspaceCommand::PreviousShell
-        | WorkspaceCommand::ToggleWorkspace
+        | WorkspaceCommand::ToggleSessionGroup
         | WorkspaceCommand::FirstSession
         | WorkspaceCommand::LastSession
         | WorkspaceCommand::Search
@@ -5313,8 +5313,8 @@ impl SessionTerminals {
                     state.exit = WorkspaceExit::NextSession(state.focus);
                     return Ok(Some(state.exit));
                 }
-                WorkspaceCommand::ToggleWorkspace => {
-                    return Ok(Some(WorkspaceExit::ToggleWorkspace));
+                WorkspaceCommand::ToggleSessionGroup => {
+                    return Ok(Some(WorkspaceExit::ToggleSessionGroup));
                 }
                 WorkspaceCommand::FirstSession => return Ok(Some(WorkspaceExit::FirstSession)),
                 WorkspaceCommand::LastSession => return Ok(Some(WorkspaceExit::LastSession)),
@@ -6165,7 +6165,7 @@ fn workspace_help_lines(bindings: &WorkspaceBindings) -> Vec<String> {
         String::new(),
         "WORKSPACE · SESSIONS".into(),
         format!("{:<24} {}", "select session", "↑/↓, J/K"),
-        format!("{:<24} {}", "fold / expand workspace", "Space"),
+        format!("{:<24} {}", "fold / expand group", "Space"),
         format!("{:<24} {}", "first / last list row", "gg / G"),
         format!("{:<24} {}", "open agent", "Enter"),
         format!("{:<24} {}", "search sessions", bindings.label("search")),
@@ -8553,7 +8553,7 @@ mod tests {
             (b"a", WorkspaceCommand::Alert, WorkspaceFocus::Sessions),
             (
                 b" ",
-                WorkspaceCommand::ToggleWorkspace,
+                WorkspaceCommand::ToggleSessionGroup,
                 WorkspaceFocus::Sessions,
             ),
             (

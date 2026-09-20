@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Archived now folds and expands with Space in both terminal session lists.
+  Its folded row remains selectable, and Space or Enter expands it.
+- Browser archive and restore actions work when the session's terminal group
+  is folded or filtered out.
+
 ## [0.3.3] - 2026-09-18
 
 ### Added

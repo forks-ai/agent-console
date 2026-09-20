@@ -110,13 +110,8 @@ pub(crate) async fn create_session(
     Ok(Json(session))
 }
 
-/// Toggles archived state for an arbitrary session key by temporarily pointing the app's
-/// `selected` index at it and reusing `toggle_selected_archive` -- the same path the TUI's
-/// archive key binding uses.
-///
-/// The cursor is restored afterwards. It is the dashboard's single selected session as well
-/// as this handler's scratch variable, and one browser archiving a session must not move
-/// what a dashboard beside it has highlighted.
+/// Toggles archive state by key through the same operation as the TUI.
+/// Terminal folding and search do not restrict browser actions.
 pub(crate) async fn archive_session(
     State(state): State<AppState>,
     Path(key): Path<String>,
@@ -125,13 +120,8 @@ pub(crate) async fn archive_session(
     let Some(index) = app.sessions.iter().position(|session| session.key == key) else {
         return Err((StatusCode::NOT_FOUND, format!("no session with key {key}")));
     };
-    let restore = app.selected;
-    app.selected = index;
-    let toggled = app.toggle_selected_archive();
-    // `toggle_selected_archive` normalizes the cursor when the session leaves the visible
-    // list, so the restored index is re-normalized rather than trusted.
-    app.selected = restore.min(app.sessions.len().saturating_sub(1));
-    toggled.map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?;
+    app.toggle_session_archive(&key)
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?;
     let session = SessionJson::from_app(&app, &app.sessions[index]);
     Ok(Json(session))
 }
