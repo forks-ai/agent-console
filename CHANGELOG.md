@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-09-20
+
 ### Fixed
 - Archived now folds and expands with Space in both terminal session lists.
   Its folded row remains selectable, and Space or Enter expands it.

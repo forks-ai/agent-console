@@ -4,7 +4,7 @@ The supported floor and the versions exercised for this release are:
 
 | Provider | Supported floor | Contract fixtures | Local version/help smoke |
 | --- | ---: | --- | --- |
-| Codex CLI | 0.100.0 | 0.100.0, 0.144.5 | 0.155.0 |
+| Codex CLI | 0.100.0 | 0.100.0, 0.144.5 | 0.155.1 |
 | Claude Code | 2.0.0 | 2.0.0, 2.1.214 | 2.1.276 |
 | pi | 0.84.0 | — | 0.84.4 |
 
